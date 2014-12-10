@@ -1,0 +1,146 @@
+%% create report
+probe_name = '2014-12-04 Imasonic 5MHz Matrix 11606 A101';
+
+% load prode data
+load('H:\My Documents\MATLAB\2014-12-06 Probe test data\2014-12-04 Imasonic 5MHz Matrix 11606 A101\RawProbeData.mat');
+
+% clear older report
+if exist(reportFilename,'file')
+    delete(reportFilename);
+end
+% create new report
+reportFilename = fullfile(pwd,[probe_name '.doc']); 
+wr = wordreport(reportFilename); 
+wr.setstyle('Heading 1'); 
+wr.addtext(['Probe test report: ' probe_name ],[1 1]); % line break before and after text
+wr.setstyle('Heading 1'); 
+wr.addtext('Contents', [1 1]); %  line break before and after text 
+wr.createtoc(1, 3); 
+wr.setstyle('heading 1'); 
+wr.addtext('Probe Image', [1 1]);
+ imagesc(DataIn); xlabel('time[us]'); ylabel('depth');
+ title('spectural image');
+wr.addfigure();
+%% filter data
+    HighPassFilter=MakeHighPassFilter;
+    [tmp, t1idx]= min(abs(usi.FMCTimeBase-16e-6)); % time 1
+    [tmp, t2idx]= min(abs(usi.FMCTimeBase-21e-6)); % time 2
+DataIn=DataIn.*(1/usi.DynarayVoltage).*(10.^(-usi.DynarayGain/20)).*(1/2^16);
+    % remove DC offset
+ DataIn=DataIn-repmat(mean(DataIn),size(DataIn,1),1);
+    %%
+    DataInHP=filter(HighPassFilter,DataIn);
+    figure(1); clf;
+    
+    subplot(2,1,1);
+    plot(usi.FMCTimeBase*1e6,DataInHP(:,:)); xlabel('time[us]'); ylabel('response[V/V]');
+    grid on;
+    title('all elements');
+    
+    subplot(2,1,2);    
+    plot(usi.FMCTimeBase(t1idx:t2idx)*1e6,DataInHP(t1idx:t2idx,32)); xlabel('time[us]'); ylabel('response[V/V]');
+    grid on;
+    title('single element, 32');
+wr.addfigure();
+%% data analysis
+    % record the strengh of received signals
+    for p=1:128
+    [amplitude(p),i(p)] = max(DataInHP(t1idx:t2idx,p)); % record the strength
+    gain=20*log10(DataInHP(t1idx:t2idx,p)/amplitude(p));
+    t1_idx=find(gain>-3,1,'first'); t1=usi.FMCTimeBase(t1_idx);
+    t2_idx=find(gain>-3,1,'last'); t2=usi.FMCTimeBase(t2_idx);
+    time_length(p)=t2-t1; % record the correspond time
+    tmax(p) = usi.FMCTimeBase(i(p));
+    p+1;
+    end
+    
+    % calculate average value of strength
+    aplave = mean(amplitude);
+    % sort strength difference in ascending order
+    [a,m] = sort(abs(amplitude-aplave));
+    
+    % calculate average value of response time
+    tave = mean(tmax);
+    % sort response time difference in ascending order
+    [t,n] = sort(abs(tmax-tave));
+    
+    % calculate average value of time length
+    tlave = mean(time_length);
+    %sort time length difference inascending orde
+    [tl,o] = sort(abs(time_length-tlave));
+    
+    bin=7;
+    
+    wr.setstyle('Heading 1');
+    wr.addtext('Analysis',[1 1]);
+    
+    % setup figure 2 represents the strength
+    % 10 of the worst elements are marked as *
+    wr.setstyle('Heading 2');
+    wr.addtext('Strength Deviation',[0 1]);
+   
+    figure(2),stem(amplitude), hold on,
+    plot(1:0.05:128,aplave,'r'), hold on,
+    plot(m(119:128),amplitude(m(119:128)),'r*');
+    axis([0 128 0.2e-06 2e-06]), xlabel('Nth element'),ylabel('Amplitude'),
+    grid on;
+    title('strength analysis');
+    wr.addfigure();
+   
+    figure(3),hist(amplitude,bin);
+    title('strength deviation');
+    grid on;
+    wr.addfigure();
+    wr.addpagebreak();
+    
+    %setup figure 4 represents the responce time
+    % 10 of the worst elements are marked as *
+    wr.setstyle('Heading 2');
+    wr.addtext('Peak Time Deviation',[0 1]);
+    
+    figure(4), stem(tmax), hold on,
+    plot(1:0.05:128,tave,'r'), hold on,
+    plot(n(119:128),tmax(n(119:128)),'r*');
+    title('peak time analysis');
+    axis([0 128 6e-06 8e-06]); xlabel('Nth element'),ylabel('Time[s]'),
+    grid on;
+    wr.addfigure();
+    
+    figure(5),hist(tmax,bin);
+    title('peak time deviation');
+    grid on;
+    wr.addfigure();
+    wr.addpagebreak();
+    
+    %setup figure 6 represents the time length
+    % 10 of the worst elements are marked as *
+    wr.setstyle('Heading 2');
+    wr.addtext('Pulse Length Deviation',[0 1]);
+    figure(6), stem(time_length), hold on,
+    plot(o(119:128),time_length(o(119:128)),'r*');
+    title('rx pulse length');
+    axis([0 128 0 2.5e-06]); xlabel('Nth element'),ylabel('Pulse Length[s]'),
+    grid on;
+    wr.addfigure();
+    
+    figure(7),hist(time_length,bin);
+    title('pulse length deviation');
+    grid on;
+    wr.addfigure();
+    wr.addpagebreak();
+%% add table
+    wr.setstyle('Heading 1');
+    wr.addtext('Worst Performance Elements',[1 1]);
+    dataCell = { ...
+         'Amplitude Element NO. ', num2str(m(119:128)); ...
+         'Time response Element NO.', num2str(n(119:128)); ...
+         'Time length Element NO.', num2str(o(119:128))};
+    [nbRows, nbCols] = size(dataCell);
+    wr.addtable(nbRows, nbCols, dataCell, [1 1]);
+%% page setup
+wr.addpagenumbers('wdAlignPageNumberRight'); 
+wr.updatetoc(); 
+%--- 
+wr.close(); 
+%--- 
+open(reportFilename);
