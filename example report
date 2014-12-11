@@ -51,6 +51,19 @@ wr.addfigure();
     t2_idx=find(gain>-3,1,'last'); t2=usi.FMCTimeBase(t2_idx);
     time_length(p)=t2-t1; % record the correspond time
     tmax(p) = usi.FMCTimeBase(i(p));
+    
+   
+    freq_expand=64; % expand factor
+    fps=abs(fft(DataInHP(t1idx:t2idx,p),length(DataInHP(t1idx:t2idx,p))*freq_expand));
+    fbase=linspace(0,1/1000,length(DataInHP(t1idx:t2idx,p))*freq_expand);
+    fpshalf=fps(1:floor(end/2)); fbasehalf=fbase(1:floor(end/2));
+    fpshalf=20*log10(fpshalf); fpshalf=fpshalf-max(fpshalf);
+
+    f1_idx=find(fpshalf>-3,1,'first'); f1=fbasehalf(f1_idx);
+    f2_idx=find(fpshalf>-3,1,'last'); f2=fbasehalf(f2_idx);
+    [tmp fmax_idx]=max(fpshalf); fcenter=(f1+f2)/2;
+    prb_bandwidth(p)=(f2-f1)/fcenter;
+    
     p+1;
     end
     
@@ -125,6 +138,22 @@ wr.addfigure();
     
     figure(7),hist(time_length,bin);
     title('pulse length deviation');
+    grid on;
+    wr.addfigure();
+    wr.addpagebreak();
+    
+     %setup figure 6 represents the time length
+    % 10 of the worst elements are marked as *
+    wr.setstyle('Heading 2');
+    wr.addtext('Bandwidth Deviation',[0 1]);
+    figure(8), plot(prb_bandwidth);
+    title('bandwidth deviation');
+    xlabel('Nth element'),ylabel('Bandwidth [%]'),
+    grid on;
+    wr.addfigure();
+    
+    figure(9),hist(prb_bandwidth,bin);
+    title('bandwidth deviation');
     grid on;
     wr.addfigure();
     wr.addpagebreak();
