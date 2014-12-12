@@ -1,0 +1,106 @@
+% this function prepares coefficients for the fast coeff method
+% needs remaiining parameters to be set correctly in the first place
+% this is implemented in matlab for now, faster mex method to come later
+function obj=PrepareCoeffs_Batch(obj,refresh)
+ALLOWABLE_FITERROR=200e-12;
+if nargin<2
+    refresh=false;
+end
+
+    % check if the parameters are not stored in cache
+    pel=sprintf('%e',obj.ProbeElementLocations(:));
+    txrxliststring=sprintf('%e',obj.TxRxList(:));
+    ParamsUniqueId=sprintf('%d%d%s_%e_%e_%s_%e_%s,%e%e%e%e%e%e%e%e%e',uint32(obj.refractionVariant),obj.coeffsize,func2str(obj.parametricInterface),obj.medium1_velocity,obj.medium2_velocity,pel,obj.FMCSamplingRate,txrxliststring,obj.image_x0,obj.image_y0,obj.image_z0,obj.image_nx,obj.image_ny,obj.image_nz,obj.image_dx,obj.image_dy,obj.image_dz);
+    paramsMD5=obj.calcMD5(ParamsUniqueId);
+if refresh==false
+    if strcmp(obj.LastCoeffSetMD5,paramsMD5)
+        % last coeffs are good - no need to make another set
+        obj.SetMessage('Existing coeffs used');
+        return
+    end
+    if ~exist([pwd '\CoeffCache'],'dir')
+        mkdir('CoeffCache')
+    end
+    % try to load from cache
+    try
+        in=load([pwd '\CoeffCache\' sprintf('cached_%s',paramsMD5)]);
+        obj.coeffs=in.coefftable;
+        obj.LastCoeffSetMD5=paramsMD5;
+        obj.SetMessage('Cached coeffs loaded');
+        return
+    catch E
+        % failed, calculate from scratch
+    end
+end 
+    
+    %coeffsize=8; % let's go for that
+    coefftable=NaN(obj.coeffsize*obj.ProbeElementCount*obj.image_ny,1,'single');
+    objcoeffsize=obj.coeffsize; objProbeElementCount=obj.ProbeElementCount;
+    % use medium 1 only    
+    if obj.refractionVariant~=Ultrasound.RefractionVariant.NoRefraction;
+        error('only no-refraction case supported at the moment');
+    end
+    obj.SetMessage('PrepareCoeffs: entering batch');
+    % upload scene settings to cuTFM    
+    obj.cuTFMv4007(int32(19));
+    % get time points
+    [ZVector TBuffer]=obj.cuTFMv4007(int32(26));
+    DelayPointZ_tofit=ZVector(1:2:end);
+    DelayPointZ_tocheck=ZVector(2:2:end-1);
+    % for each line, for each tx, prepare a coefficient set. This can be moved to mex.    
+    fitorder_stats=zeros(objProbeElementCount,obj.image_ny);
+    fiterror_stats=zeros(objProbeElementCount,obj.image_ny);
+    pointsperline=size(ZVector,1);
+    
+    parfor line=1:obj.image_ny        
+         s=warning('off','all');
+       % obj.SetMessage(sprintf('PrepareCoeffs: %d of %d lines',line,obj.image_ny));
+        coeffline=NaN(objcoeffsize*objProbeElementCount,1);
+        for tx=1:objProbeElementCount  % for each tx
+            % get 17+16 times
+            get_offset=(line-1)*objProbeElementCount*pointsperline+(tx-1)*pointsperline+1;
+            DelayPointT=TBuffer(:,(line-1)*objProbeElementCount+tx);                                    
+            % fit poly, check order
+            DelayPointT_tofit=DelayPointT(1:2:end);
+            DelayPointT_tocheck=DelayPointT(2:2:end-1);
+            earlyquit=0;
+            ppadded=zeros(obj.coeffsize,1);
+            for fitorder=3:(obj.coeffsize-1)                
+                p=obj.polyfit_quick(DelayPointZ_tofit,DelayPointT_tofit,fitorder); 
+                pad=zeros(1,obj.coeffsize-fitorder-1);
+                ppadded=[pad p];
+                DelayPointT_fitted=polyval(ppadded,DelayPointZ_tocheck);
+                fiterror=max(abs(DelayPointT_fitted-DelayPointT_tocheck));
+                %plot(DelayPointZ_tocheck,DelayPointT_fitted,'rx',DelayPointZ_tocheck,DelayPointT_tocheck,'go')
+                if fiterror<ALLOWABLE_FITERROR                    
+                    fitorder_stats(tx,line)=fitorder;                    
+                    fiterror_stats(tx,line)=fiterror;  
+                    earlyquit=1;
+                    break
+                end
+            end
+             if earlyquit==0
+                 fitorder_stats(tx,line)=99;                    
+                 fiterror_stats(tx,line)=fiterror; 
+             end
+            % debug: to plot, say
+            % plot(DelayPointZ,DelayPointT,obj.image_zcoordinates,polyval(p,obj.image_zcoordinates))
+            % store coeffs            
+            %coefftable(obj.coeffOffsetVector(line,tx))=p;         
+            coeffline((objcoeffsize*(tx-1)+1):(objcoeffsize*(tx)))=ppadded;
+        end
+        coefftableparfor(:,line)=coeffline;
+        warning(s);
+    end % for line     
+    coefftable=single(reshape(coefftableparfor,obj.coeffsize*obj.ProbeElementCount*obj.image_ny,1));
+    obj.coeffs=coefftable;
+    obj.LastCoeffSetMD5=paramsMD5;
+    save([pwd '\CoeffCache\' sprintf('cached_%s',paramsMD5)],'coefftable');
+    obj.SetMessage('Precalculation complete'); drawnow;
+    
+    obj.fitorder_stats=fitorder_stats;
+    obj.fiterror_stats=fiterror_stats; 
+    if (sum(fitorder_stats(:)==99)>0)
+        warning('Cannot find proper coeff set. Move image away from surface, reduce curvature complexity, or raise fitorder');
+    end
+end

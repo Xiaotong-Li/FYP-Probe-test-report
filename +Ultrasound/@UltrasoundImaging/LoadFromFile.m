@@ -1,0 +1,26 @@
+function LoadFromFile(obj,filename)
+in=load(filename);
+obj.ProbeDirectivityCosLimit=in.frame.ProbeDirectivityCosLimit;
+obj.FMCSamplingRate=in.frame.FMCSamplingRate;
+obj.SetFMCTimeStart(in.frame.FMCTimeStart);
+obj.TxRxList=in.frame.TxRxList;
+obj.refractionVariant=in.frame.refractionVariant;
+obj.parametricInterface=in.frame.parametricInterface;
+obj.medium1_velocity=in.frame.medium1_velocity;
+obj.medium2_velocity=in.frame.medium2_velocity;
+obj.ProbeElementLocations=in.frame.ProbeElementLocations;
+obj.FMC=in.frame.FMC;
+obj.TxRxList=in.frame.TxRxList;
+obj.image_x0=in.frame.image_x0;
+obj.image_y0=in.frame.image_y0;
+obj.image_z0=in.frame.image_z0;
+obj.image_nx=in.frame.image_nx;
+obj.image_ny=in.frame.image_ny;
+obj.image_nz=in.frame.image_nz;
+obj.image_dx=in.frame.image_dx;
+obj.image_dy=in.frame.image_dy;
+obj.image_dz=in.frame.image_dz;
+obj.coeffs=in.frame.coeffs;
+obj.coeffsize=in.frame.coeffsize;
+obj.LastCoeffSetMD5=in.frame.LastCoeffSetMD5;
+end
