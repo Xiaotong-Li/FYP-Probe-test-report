@@ -1,175 +1,261 @@
-%% create report
-probe_name = '2014-12-04 Imasonic 5MHz Matrix 11606 A101';
+function ProbeReport(varargin)
+%% prepare input and output names
+if nargin==0 % if function called with no arguments    
+    % load prode data
+    if ~exist('LastFileName','var')
+        LastFileName='H:\My Documents\MATLAB\2014-12-06 Probe test data\2014-12-04 Imasonic 5MHz Matrix 11606 A101\RawProbeData.mat';
+        fprintf('setting source file name to default: %s\n',LastFileName);
+    end
+    % set report name
+    if ~exist('ProbeName','var')
+        ProbeName = '2014-12-04 Imasonic 5MHz Matrix 11606 A101';
+        fprintf('setting probe name to default: %s\n',ProbeName);
+    end
+    fprintf('loading the file from variable LastFileName - %s\n',LastFileName);
+elseif nargin==2
+    % get LastFileName and ProbeName from arguments
+    LastFileName=varargin{1};
+    ProbeName=varargin{2};
+else
+    error('0 or 2 arguments needed');
+end
 
-% load prode data
-load('H:\My Documents\MATLAB\2014-12-06 Probe test data\2014-12-04 Imasonic 5MHz Matrix 11606 A101\RawProbeData.mat');
+%% define constants
+SelectedElementIdx=32;
+HistogramBins=7;
+% highPassFilter settings
+PassBand=100e3;
+StopBand=70e3;
+% FFT filer setings
+freq_expand=64;
 
-% clear older report
+%% load source data
+load(LastFileName);
+    
+%% clear older report if exists
+reportFilename = fullfile(pwd,[ProbeName '.doc']);
 if exist(reportFilename,'file')
+     try % try closing old word instance
+           hdlActiveX = actxGetRunningServer('Word.Application');
+           try 
+            docu=hdlActiveX.Application.ActiveDocument; docu.Close(0);
+           catch E1
+           end
+           invoke(hdlActiveX, 'Quit');
+     catch E
+     end
+    fprintf('deleting old report...\n');
     delete(reportFilename);
 end
-% create new report
-reportFilename = fullfile(pwd,[probe_name '.doc']); 
-wr = wordreport(reportFilename); 
-wr.setstyle('Heading 1'); 
-wr.addtext(['Probe test report: ' probe_name ],[1 1]); % line break before and after text
-wr.setstyle('Heading 1'); 
-wr.addtext('Contents', [1 1]); %  line break before and after text 
-wr.createtoc(1, 3); 
-wr.setstyle('heading 1'); 
-wr.addtext('Probe Image', [1 1]);
- imagesc(DataIn); xlabel('time[us]'); ylabel('depth');
- title('spectural image');
-wr.addfigure();
-%% filter data
-    HighPassFilter=MakeHighPassFilter;
-    [tmp, t1idx]= min(abs(usi.FMCTimeBase-16e-6)); % time 1
-    [tmp, t2idx]= min(abs(usi.FMCTimeBase-21e-6)); % time 2
+
+%% create new report
+fprintf('opening new report...\n');
+wr = wordreport(reportFilename);
+wr.setstyle('Heading 1');
+wr.addtext(['Probe test report: ' ProbeName ],[1 1]); 
+                                        % line break before and after text
+
+wr.setstyle('Heading 1');
+wr.addtext('Contents', [1 1]);          % line break before and after text
+wr.createtoc(1, 3);
+
+%% overview section
+fprintf('adding overview...\n');
+wr.setstyle('Heading 2');
+wr.addtext('Source data overview', [1 1]);
+figure(1); clf;
+imagesc(DataIn); ylabel('time[us]'); xlabel('element index[-]');
+title('Source data overview');
+colormap wave;
+wr.addfigure(); 
+close(1);
+
+%% Begin data filtering
+% find a slice of time where the first reflection from the glass block is
+% expected
+[tmp, tCutIdx] = min(abs(usi.FMCTimeBase-15e-6)); % time 0
+[tmp, t1idx]= min(abs(usi.FMCTimeBase-16e-6)); % time 1
+[tmp, t2idx]= min(abs(usi.FMCTimeBase-22e-6)); % time 2
+%% reset all data before tCut to zero
+DataIn(1:tCutIdx,:)=0;
+%% scale the data from input units to volts per volt
 DataIn=DataIn.*(1/usi.DynarayVoltage).*(10.^(-usi.DynarayGain/20)).*(1/2^16);
-    % remove DC offset
- DataIn=DataIn-repmat(mean(DataIn),size(DataIn,1),1);
-    %%
-    DataInHP=filter(HighPassFilter,DataIn);
-    figure(1); clf;
-    
-    subplot(2,1,1);
-    plot(usi.FMCTimeBase*1e6,DataInHP(:,:)); xlabel('time[us]'); ylabel('response[V/V]');
-    grid on;
-    title('all elements');
-    
-    subplot(2,1,2);    
-    plot(usi.FMCTimeBase(t1idx:t2idx)*1e6,DataInHP(t1idx:t2idx,32)); xlabel('time[us]'); ylabel('response[V/V]');
-    grid on;
-    title('single element, 32');
-wr.addfigure();
+
+%% remove DC offset
+DataIn=DataIn-repmat(mean(DataIn),size(DataIn,1),1);
+%% Apply filter
+
+HighPassFilter=MakeHighPassFilter(StopBand,PassBand,usi.FMCSamplingRate);
+DataInHP=filter(HighPassFilter,DataIn);
+DataInHilbert=abs(hilbert(DataInHP));
+
+%% 
+figure(1); clf;
+
+subplot(2,1,1);
+plot(usi.FMCTimeBase*1e6,DataInHP(:,:)); xlabel('time[us]'); ylabel('response[V/V]');
+grid on;
+title('all elements');
+
+subplot(2,1,2);
+
+plot(usi.FMCTimeBase(t1idx:t2idx)*1e6,DataInHP(t1idx:t2idx,SelectedElementIdx)); xlabel('time[us]'); ylabel('response[V/V]');
+grid on;
+title(sprintf('single element, %d',SelectedElementIdx));
+wr.addfigure(); close(1);
+wr.setstyle('Normal');
+wr.addtext('Note: The excitation pulse has been blanked for purpose of response analysis. ', [1 1]);
+wr.addtext(sprintf('Note: Signal treated with high-pass filter at %0.0f kHz',PassBand/1e3), [0 1]);
 %% data analysis
-    % record the strengh of received signals
-    for p=1:128
-    [amplitude(p),i(p)] = max(DataInHP(t1idx:t2idx,p)); % record the strength
-    gain=20*log10(DataInHP(t1idx:t2idx,p)/amplitude(p));
-    t1_idx=find(gain>-3,1,'first'); t1=usi.FMCTimeBase(t1_idx);
-    t2_idx=find(gain>-3,1,'last'); t2=usi.FMCTimeBase(t2_idx);
-    time_length(p)=t2-t1; % record the correspond time
-    tmax(p) = usi.FMCTimeBase(i(p));
-    
+% record the strengh of received signals
+fprintf('adding pulse-echo strength analysis...\n');
+for p=1:128
+    [amplitude(p),tmax_idx(p)] = max(abs(DataInHilbert(t1idx:t2idx,p))); % record the pulse-echo and its location
    
-    freq_expand=64; % expand factor
-    fps=abs(fft(DataInHP(t1idx:t2idx,p),length(DataInHP(t1idx:t2idx,p))*freq_expand));
-    fbase=linspace(0,1/1000,length(DataInHP(t1idx:t2idx,p))*freq_expand);
+    % calculate time length and peak time   
+    PulseEchoResponse=20*log10(DataInHilbert(t1idx:t2idx,p)/amplitude(p));   
+    t1_idx=find(PulseEchoResponse>-3,1,'first'); t1=usi.FMCTimeBase(t1_idx);
+    t2_idx=find(PulseEchoResponse>-3,1,'last'); t2=usi.FMCTimeBase(t2_idx); 
+    time_length(p)=t2-t1;                                       
+    tmax(p) = usi.FMCTimeBase(tmax_idx(p));                  
+   
+    % calculate probe bandwidth
+    fps=abs(fft(DataInHP(t1idx:t2idx,p),length(DataInHP(t1idx:t2idx,p)*freq_expand)));
+    fbase=linspace(0,usi.FMCSamplingRate,length(DataInHP(t1idx:t2idx,p))*freq_expand); 
     fpshalf=fps(1:floor(end/2)); fbasehalf=fbase(1:floor(end/2));
     fpshalf=20*log10(fpshalf); fpshalf=fpshalf-max(fpshalf);
-
+    
     f1_idx=find(fpshalf>-3,1,'first'); f1=fbasehalf(f1_idx);
     f2_idx=find(fpshalf>-3,1,'last'); f2=fbasehalf(f2_idx);
     [tmp fmax_idx]=max(fpshalf); fcenter=(f1+f2)/2;
     prb_bandwidth(p)=(f2-f1)/fcenter;
-    
-    p+1;
-    end
-    
-    % calculate average value of strength
-    aplave = mean(amplitude);
-    % sort strength difference in ascending order
-    [a,m] = sort(abs(amplitude-aplave));
-    
-    % calculate average value of response time
-    tave = mean(tmax);
-    % sort response time difference in ascending order
-    [t,n] = sort(abs(tmax-tave));
-    
-    % calculate average value of time length
-    tlave = mean(time_length);
-    %sort time length difference inascending orde
-    [tl,o] = sort(abs(time_length-tlave));
-    
-    bin=7;
-    
-    wr.setstyle('Heading 1');
-    wr.addtext('Analysis',[1 1]);
-    
-    % setup figure 2 represents the strength
-    % 10 of the worst elements are marked as *
-    wr.setstyle('Heading 2');
-    wr.addtext('Strength Deviation',[0 1]);
-   
-    figure(2),stem(amplitude), hold on,
-    plot(1:0.05:128,aplave,'r'), hold on,
-    plot(m(119:128),amplitude(m(119:128)),'r*');
-    axis([0 128 0.2e-06 2e-06]), xlabel('Nth element'),ylabel('Amplitude'),
-    grid on;
-    title('strength analysis');
-    wr.addfigure();
-   
-    figure(3),hist(amplitude,bin);
-    title('strength deviation');
-    grid on;
-    wr.addfigure();
-    wr.addpagebreak();
-    
-    %setup figure 4 represents the responce time
-    % 10 of the worst elements are marked as *
-    wr.setstyle('Heading 2');
-    wr.addtext('Peak Time Deviation',[0 1]);
-    
-    figure(4), stem(tmax), hold on,
-    plot(1:0.05:128,tave,'r'), hold on,
-    plot(n(119:128),tmax(n(119:128)),'r*');
-    title('peak time analysis');
-    axis([0 128 6e-06 8e-06]); xlabel('Nth element'),ylabel('Time[s]'),
-    grid on;
-    wr.addfigure();
-    
-    figure(5),hist(tmax,bin);
-    title('peak time deviation');
-    grid on;
-    wr.addfigure();
-    wr.addpagebreak();
-    
-    %setup figure 6 represents the time length
-    % 10 of the worst elements are marked as *
-    wr.setstyle('Heading 2');
-    wr.addtext('Pulse Length Deviation',[0 1]);
-    figure(6), stem(time_length), hold on,
-    plot(o(119:128),time_length(o(119:128)),'r*');
-    title('rx pulse length');
-    axis([0 128 0 2.5e-06]); xlabel('Nth element'),ylabel('Pulse Length[s]'),
-    grid on;
-    wr.addfigure();
-    
-    figure(7),hist(time_length,bin);
-    title('pulse length deviation');
-    grid on;
-    wr.addfigure();
-    wr.addpagebreak();
-    
-     %setup figure 6 represents the time length
-    % 10 of the worst elements are marked as *
-    wr.setstyle('Heading 2');
-    wr.addtext('Bandwidth Deviation',[0 1]);
-    figure(8), plot(prb_bandwidth);
-    title('bandwidth deviation');
-    xlabel('Nth element'),ylabel('Bandwidth [%]'),
-    grid on;
-    wr.addfigure();
-    
-    figure(9),hist(prb_bandwidth,bin);
-    title('bandwidth deviation');
-    grid on;
-    wr.addfigure();
-    wr.addpagebreak();
+end
+
+%% ranking for each each property
+% 1.calculate average value of strength
+ampave = mean(amplitude);
+% sort strength difference in ascending order
+[amp_value,amp_ranking] = sort(abs(amplitude-ampave));
+
+% 2.calculate average value of response time
+t_ave = mean(tmax);
+% sort response time difference in ascending order
+[tmax_value,tmax_ranking] = sort(abs(tmax-t_ave));
+
+% 3.calculate average value of time length
+tlave = mean(time_length);
+%sort time length difference inascending orde
+[tl_value,tl_ranking] = sort(abs(time_length-tlave));
+
+% 4.calculate average value of bandwidth
+bandwidth_ave = mean(prb_bandwidth);
+%sort bandwidth difference inascending orde
+[prb_bandwidth_value,prb_bandwidth_ranking] = sort(abs(prb_bandwidth-bandwidth_ave));
+
+wr.setstyle('Heading 1');
+wr.addtext('Analysis',[1 1]);
+
+%% setup figure 2&3 represents the sensitive
+% 10 of the worst elements are marked as *
+fprintf('adding per-element strength deviation analysis...\n');
+wr.setstyle('Heading 2');
+wr.addtext('Per-element strength Deviation',[0 1]);
+
+figure(2),stem(amplitude), hold on,
+plot(1:0.05:128,ampave,'r'), hold on,
+plot(amp_ranking(119:128),amplitude(amp_ranking(119:128)),'r*');
+axis([0 128 0 2e-06]), xlabel('Nth element[-]'),ylabel('Sensitivity[V/V]'),
+grid on;
+title('Strength analysis');
+wr.addfigure(); close(2);
+
+figure(3),hist(amplitude,HistogramBins);
+xlabel('pulse-echo strength[V/V]'); ylabel('occurence count[-]');
+title('Strength deviation'); 
+grid on;
+wr.addfigure(); close(3);
+wr.addpagebreak();
+
+%% setup figure 4&5 represents the response time (peak time)
+% 10 of the worst elements are marked as *
+fprintf('adding peak time deviaion analysis...\n');
+wr.setstyle('Heading 2');
+wr.addtext('Peak Time Deviation',[0 1]);
+
+figure(4), stem(tmax), hold on,
+plot(1:0.05:128,t_ave,'r'), hold on,
+plot(tmax_ranking(119:128),tmax(tmax_ranking(119:128)),'r*');
+title('peak time analysis');
+axis([0 128 5.5e-06 9e-06]); xlabel('Nth element[-]'),ylabel('Time[s]'),
+grid on;
+wr.addfigure(); close(4);
+
+figure(5),hist(tmax,HistogramBins);
+xlabel('Time[s]'); ylabel('occurences count[-]');
+title('peak time deviation'); 
+grid on;
+wr.addfigure(); close(5);
+wr.addpagebreak();
+
+%% setup figure 6&7 represents the pulse length
+% 10 of the worst elements are marked as *
+fprintf('adding pulse-echo length analysis...\n');
+wr.setstyle('Heading 2');
+wr.addtext('Pulse Length Deviation',[0 1]);
+
+figure(6), stem(time_length), hold on,
+plot(tl_ranking(119:128),time_length(tl_ranking(119:128)),'r*');
+title('rx pulse length');
+axis([0 128 0 6e-06]); xlabel('Nth element[-]'),ylabel('Pulse Length[s]'),
+grid on;
+wr.addfigure(); close(6);
+
+figure(7),hist(time_length,HistogramBins);
+xlabel('Pulse length[s]'); ylabel('occurences count[-]');
+title('Pulse length deviation');
+grid on;
+wr.addfigure(); close(7);
+wr.addpagebreak();
+
+%% setup figure 8&9 represents the probe bandwidth
+% 10 of the worst elements are marked as *
+fprintf('adding per-element bandwidth analysis...\n');
+wr.setstyle('Heading 2');
+wr.addtext('Bandwidth analysis',[0 1]);
+
+figure(8), stem(prb_bandwidth*100); hold on,
+plot(prb_bandwidth_ranking(119:128),prb_bandwidth(prb_bandwidth_ranking(119:128))*100,'r*');
+title('rx pulse length');
+title('Bandwidth deviation');
+xlabel('Nth element[-]'),ylabel('Bandwidth [%]'),
+grid on;
+wr.addfigure(); close(8);
+
+figure(9),hist(prb_bandwidth*100,HistogramBins);
+xlabel('Bandwidth[%]'); ylabel('occurences count[-]');
+title('Bandwidth deviation');
+grid on;
+wr.addfigure(); close(9);
+wr.addpagebreak();
 %% add table
-    wr.setstyle('Heading 1');
-    wr.addtext('Worst Performance Elements',[1 1]);
-    dataCell = { ...
-         'Amplitude Element NO. ', num2str(m(119:128)); ...
-         'Time response Element NO.', num2str(n(119:128)); ...
-         'Time length Element NO.', num2str(o(119:128))};
-    [nbRows, nbCols] = size(dataCell);
-    wr.addtable(nbRows, nbCols, dataCell, [1 1]);
+fprintf('adding worst elements table\n');
+wr.setstyle('Heading 1');
+wr.addtext('Worst Performing Elements',[1 1]);
+wr.setstyle('Normal');
+wr.addtext('Table sorted by worst last',[1 1]);
+dataCell = { ...
+    'Sensitivity Element NO. ', num2str(amp_ranking(119:128)); ...
+    'Time response Element NO.', num2str(tmax_ranking(119:128)); ...
+    'Time length Element NO.', num2str(tl_ranking(119:128)); ...
+    'Bandwidth Element NO.', num2str(prb_bandwidth_ranking(119:128))};
+[nbRows, nbCols] = size(dataCell);
+wr.addtable(nbRows, nbCols, dataCell, [1 1]);
 %% page setup
-wr.addpagenumbers('wdAlignPageNumberRight'); 
-wr.updatetoc(); 
-%--- 
-wr.close(); 
-%--- 
+fprintf('finalizing...');
+wr.addpagenumbers('wdAlignPageNumberRight');
+wr.updatetoc();
+%---
+wr.close();
+%---
 open(reportFilename);
+fprintf('done.\n');
