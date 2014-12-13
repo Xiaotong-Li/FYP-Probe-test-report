@@ -186,7 +186,7 @@ figure(4), stem(tmax), hold on,
 plot(1:0.05:128,t_ave,'r'), hold on,
 plot(tmax_ranking(119:128),tmax(tmax_ranking(119:128)),'r*');
 title('peak time analysis');
-axis([0 128 5.5e-06 9e-06]); xlabel('Nth element[-]'),ylabel('Time[s]'),
+axis([0 128 5e-06 9e-06]); xlabel('Nth element[-]'),ylabel('Time[s]'),
 grid on;
 wr.addfigure(); close(4);
 
@@ -227,7 +227,7 @@ figure(8), stem(prb_bandwidth*100); hold on,
 plot(prb_bandwidth_ranking(119:128),prb_bandwidth(prb_bandwidth_ranking(119:128))*100,'r*');
 title('rx pulse length');
 title('Bandwidth deviation');
-xlabel('Nth element[-]'),ylabel('Bandwidth [%]'),
+axis([0 128 0 200]);xlabel('Nth element[-]'),ylabel('Bandwidth [%]'),
 grid on;
 wr.addfigure(); close(8);
 
