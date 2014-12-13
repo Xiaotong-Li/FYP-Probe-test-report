@@ -143,9 +143,9 @@ t_ave = mean(tmax);
 [tmax_value,tmax_ranking] = sort(abs(tmax-t_ave));
 
 % 3.calculate average value of time length
-tlave = mean(time_length);
+tl_ave = mean(time_length);
 %sort time length difference inascending orde
-[tl_value,tl_ranking] = sort(abs(time_length-tlave));
+[tl_value,tl_ranking] = sort(abs(time_length-tl_ave));
 
 % 4.calculate average value of bandwidth
 bandwidth_ave = mean(prb_bandwidth);
@@ -155,7 +155,7 @@ bandwidth_ave = mean(prb_bandwidth);
 wr.setstyle('Heading 1');
 wr.addtext('Analysis',[1 1]);
 
-%% setup figure 2&3 represents the sensitive
+%% setup figure 2&3 represents the strength
 % 10 of the worst elements are marked as *
 fprintf('adding per-element strength deviation analysis...\n');
 wr.setstyle('Heading 2');
@@ -164,7 +164,7 @@ wr.addtext('Per-element strength Deviation',[0 1]);
 figure(2),stem(amplitude), hold on,
 plot(1:0.05:128,ampave,'r'), hold on,
 plot(amp_ranking(119:128),amplitude(amp_ranking(119:128)),'r*');
-axis([0 128 0 2e-06]), xlabel('Nth element[-]'),ylabel('Sensitivity[V/V]'),
+axis([0 128 min(amplitude) max(amplitude)]), xlabel('Nth element[-]'),ylabel('Sensitivity[V/V]'),
 grid on;
 title('Strength analysis');
 wr.addfigure(); close(2);
@@ -186,7 +186,7 @@ figure(4), stem(tmax), hold on,
 plot(1:0.05:128,t_ave,'r'), hold on,
 plot(tmax_ranking(119:128),tmax(tmax_ranking(119:128)),'r*');
 title('peak time analysis');
-axis([0 128 5e-06 9e-06]); xlabel('Nth element[-]'),ylabel('Time[s]'),
+axis([0 128 min(tmax) max(tmax)]); xlabel('Nth element[-]'),ylabel('Time[s]'),
 grid on;
 wr.addfigure(); close(4);
 
@@ -204,9 +204,10 @@ wr.setstyle('Heading 2');
 wr.addtext('Pulse Length Deviation',[0 1]);
 
 figure(6), stem(time_length), hold on,
+plot(1:0.05:128,tl_ave,'r'), hold on,
 plot(tl_ranking(119:128),time_length(tl_ranking(119:128)),'r*');
 title('rx pulse length');
-axis([0 128 0 6e-06]); xlabel('Nth element[-]'),ylabel('Pulse Length[s]'),
+axis([0 128 min(time_length) max(time_length)]); xlabel('Nth element[-]'),ylabel('Pulse Length[s]'),
 grid on;
 wr.addfigure(); close(6);
 
@@ -224,10 +225,11 @@ wr.setstyle('Heading 2');
 wr.addtext('Bandwidth analysis',[0 1]);
 
 figure(8), stem(prb_bandwidth*100); hold on,
+plot(1:0.05:128,bandwidth_ave*100,'r'), hold on,
 plot(prb_bandwidth_ranking(119:128),prb_bandwidth(prb_bandwidth_ranking(119:128))*100,'r*');
 title('rx pulse length');
 title('Bandwidth deviation');
-axis([0 128 0 200]);xlabel('Nth element[-]'),ylabel('Bandwidth [%]'),
+axis([0 128 min(prb_bandwidth)*100 max(prb_bandwidth)*100]);xlabel('Nth element[-]'),ylabel('Bandwidth [%]'),
 grid on;
 wr.addfigure(); close(8);
 
